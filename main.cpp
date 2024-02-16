@@ -11,6 +11,26 @@ static const double y_start=-1;
 static const double y_end=1;
 
 static int MAXITER=10;
+
+std::vector<unsigned int> colors_ramp = {
+        0x000003FF,
+        0x000003FF,
+        0x0B0726FF,
+        0x240B4EFF,
+        0x410967FF,
+        0x5D126EFF,
+        0x781C6DFF,
+        0x932567FF,
+        0xAE305BFF,
+        0xC73E4CFF,
+        0xDC5039FF,
+        0xED6825FF,
+        0xF7850EFF,
+        0xFBA40AFF,
+        0xF9C52CFF,
+        0xF2E660FF,
+};
+
 int diverge(double cx,double cy){
     int iter=0;
     double vx=cx;
@@ -24,23 +44,24 @@ int diverge(double cx,double cy){
         iter++;
     }
     if(iter>0 && iter<MAXITER){
-        return 0xFFFFFF;
+        return colors_ramp[iter%16];
     }
-    else{
-        return 0x000000;
-    }
+
+    return 0x000000;
+
 
 }
 int* mandelbrotHost(){
     int *d_res=new int[IMAGE_HEIGHT*IMAGE_WIDTH];
     double dx=(x_end-x_start)/IMAGE_WIDTH;
     double dy=(y_end-y_start)/IMAGE_HEIGHT;
-
+#pragma omp parallel for collapse(2) num_threads(48)
     for (int i = 0; i < IMAGE_WIDTH; ++i) {
         for (int j = 0; j < IMAGE_HEIGHT; ++j) {
             //cx+cxi numero complejo
             double cx=x_start+i*dx;
             double cy=y_end-j*dy;
+
             int color=diverge(cx,cy);
 
             d_res[j*IMAGE_WIDTH+i]=color;
@@ -65,13 +86,32 @@ std::shared_ptr<sf::Uint8 >createTexture(){
 
 int main() {
     sf::RenderWindow window(sf::VideoMode(IMAGE_WIDTH, IMAGE_HEIGHT), "My window");
-    auto pixles=createTexture();
+
+
+    sf::Text text;
+    sf::Font font;
+    {
+        font.loadFromFile("arial.ttf");
+        text.setFont(font);
+        text.setCharacterSize(30);
+        text.setFillColor(sf::Color::White);
+        text.setStyle(sf::Text::Bold);
+        text.setPosition(10, 10);
+    }
+
+    auto pixels=createTexture();
     sf::Texture texture;
     texture.create(IMAGE_WIDTH,IMAGE_HEIGHT);
-    texture.update(pixles.get());
+    texture.update(pixels.get());
 
     sf::Sprite sprite;
     sprite.setTexture(texture);
+
+
+
+    int frames=0;
+    int fps=0;
+    sf::Clock clockFrames;
 
     while (window.isOpen())
     {
@@ -83,13 +123,28 @@ int main() {
             if (event.type == sf::Event::Closed)
                 window.close();
         }
-        MAXITER++;
+        if (MAXITER<100)
+            MAXITER++;
         {
-            pixles=createTexture();
-            texture.update(pixles.get());
+            pixels=createTexture();
+            texture.update(pixels.get());
+            auto msg=fmt::format("Mode={}, Iterations={} ,FPS={}",
+                                 "CPU", MAXITER, fps);
+
+            text.setString(msg);
+
         }
+
+        if (clockFrames.getElapsedTime().asSeconds()>=1.0){
+            fps=frames;
+            frames=0;
+            clockFrames.restart();
+        }
+        frames++;
+
         window.clear(sf::Color::Black);
         window.draw(sprite);
+        window.draw(text);
         window.display();
     }
     return 0;
